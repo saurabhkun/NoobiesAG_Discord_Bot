@@ -1,4 +1,4 @@
-# 🖥️ AGNoobies - CP Discord Bot
+# 🖥️ noobiesAG - CP Discord Bot
 
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Discord.py](https://img.shields.io/badge/Discord.py-2.x-blue?style=for-the-badge&logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
@@ -69,7 +69,7 @@ A feature-rich Discord bot built for Competitive Programming communities. Track 
 2.  **Navigate to the Directory:**
 
     ```bash
-    cd AGNoobies-bot
+    cd NoobiesAG_Discord_Bot
     ```
 
 3.  **Install Dependencies:**
@@ -89,10 +89,10 @@ A feature-rich Discord bot built for Competitive Programming communities. Track 
 
 ### Configuration
 
-1.  Locate the `.env` file in the project directory.
+1.  Create a `.env` file in the project root.
 2.  Open it and input your copied Discord Bot Token:
     ```env
-    BOT_TOKEN=YOUR_DISCORD_BOT_TOKEN_HERE
+    DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN_HERE
     ```
 3.  Open `config.py` and customize local channel names, phase ranges, custom tier roles, and database file paths if needed.
 
@@ -106,6 +106,42 @@ python bot.py
 
 ---
 
+## 📁 Project Structure
+
+```
+NoobiesAG_Discord_Bot/
+├── .env                  # Environment variables (DISCORD_TOKEN)
+├── .gitignore            # Git ignore rules
+├── LICENSE               # MIT License
+├── README.md             # This file
+├── bot.py                # Entry point — loads cogs and starts the bot
+├── config.py             # Central configuration (channels, roles, tiers)
+├── database.py           # All SQLite database operations
+├── requirements.txt      # Python dependencies
+├── cogs/                 # Discord.py command extensions
+│   ├── achievements.py   # 12 automatic achievement badges
+│   ├── admin.py          # Admin commands (setup, reset)
+│   ├── analytics.py      # Heatmaps, weakness finder, rating predictor
+│   ├── codeforces.py     # CF handle linking & submission polling
+│   ├── community.py      # Anonymous tips, ICPC teams, resource tracker
+│   ├── contests.py       # Upcoming contests & weekly mini-contests
+│   ├── doubts.py         # Doubt forum threads & resolution
+│   ├── economy.py        # XP, coins, shop, leveling system
+│   ├── help.py           # Interactive paginated help menu
+│   ├── problems.py       # Problem recommender & virtual duels
+│   ├── progress.py       # Daily consistency tracker & leaderboard
+│   ├── roadmap.py        # CP learning roadmap checklists
+│   ├── scheduler.py      # Daily announcements & streak resets
+│   ├── seasons.py        # Monthly competitive seasons & Hall of Fame
+│   ├── setup.py          # Server initialization (channels, roles)
+│   ├── social.py         # Study groups, partner finder, private VCs
+│   └── stats.py          # CF stats viewer & head-to-head comparisons
+└── utils/
+    └── helpers.py        # Shared utilities (tier progress, embeds, bars)
+```
+
+---
+
 ## ⚙️ Configuration File Overview
 
 You can adjust bot configurations inside `config.py`:
@@ -114,6 +150,9 @@ You can adjust bot configurations inside `config.py`:
 - `CF_ACTIVITY_CHANNEL`: Name of the channel where duels, seasons, and contest updates are posted.
 - `SETUP_CATEGORY`: Category folder under which new ICPC team channels and doubts are organized.
 - `CF_POLL_INTERVAL`: Fetch frequency (in seconds) for tracking Codeforces submissions.
+- `DB_PATH`: Path to the SQLite database file (default: `bot_data.db`).
+
+All of these values can also be set via environment variables in the `.env` file.
 
 ---
 
@@ -215,6 +254,12 @@ You can adjust bot configurations inside `config.py`:
 | `!lookingforteam`   | Register yourself in the ICPC team formation partner search pool.         | `!lookingforteam`                  |
 | `!formteam @u1 @u2` | Form an ICPC team with 2 partners, auto-generating private VC/Text rooms. | `!formteam @tourist @Benq`         |
 
+### ❓ Help Module
+
+| Command              | Description                                                                          | Example              |
+| :------------------- | :----------------------------------------------------------------------------------- | :------------------- |
+| `!help [command]`    | Display the interactive paginated help menu or view details for a specific command.   | `!help virtualduel`  |
+
 ---
 
 ## 🏆 Rank System
@@ -270,11 +315,17 @@ Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
 ---
 
 ```text
-    _    ____ _   _             _     _
-   / \  / ___| \ | | ___   ___  | |__ (_) ___  ___
-  / _ \| |  _|  \| |/ _ \ / _ \ | '_ \| |/ _ \/ __|
- / ___ \ |_| | |\  | (_) | (_) || |_) | |  __/\__ \
-/_/   \_\____|_| \_|\___/ \___/ |_.__/|_|\___||___/
+                                $$\       $$\                      $$$$$$\   $$$$$$\  
+                              $$ |      \__|                    $$  __$$\ $$  __$$\ 
+$$$$$$$\   $$$$$$\   $$$$$$\  $$$$$$$\  $$\  $$$$$$\   $$$$$$$\ $$ /  $$ |$$ /  \__|
+$$  __$$\ $$  __$$\ $$  __$$\ $$  __$$\ $$ |$$  __$$\ $$  _____|$$$$$$$$ |$$ |$$$$\ 
+$$ |  $$ |$$ /  $$ |$$ /  $$ |$$ |  $$ |$$ |$$$$$$$$ |\$$$$$$\  $$  __$$ |$$ |\_$$ |
+$$ |  $$ |$$ |  $$ |$$ |  $$ |$$ |  $$ |$$ |$$   ____| \____$$\ $$ |  $$ |$$ |  $$ |
+$$ |  $$ |\$$$$$$  |\$$$$$$  |$$$$$$$  |$$ |\$$$$$$$\ $$$$$$$  |$$ |  $$ |\$$$$$$  |
+\__|  \__| \______/  \______/ \_______/ \__| \_______|\_______/ \__|  \__| \______/ 
+                                                                                    
+                                                                                    
+                                                                                    
 ```
 
 <p align="center">

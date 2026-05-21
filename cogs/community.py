@@ -52,10 +52,11 @@ class Community(commands.Cog):
             pass
 
         # Fetch tip sequential ID
+        now_ist = datetime.now(IST).isoformat()
         with db._connect() as con:
             con.execute(
-                "INSERT INTO tips (guild_id, tip_content, message_id) VALUES (?, ?, 0)",
-                (ctx.guild.id, tip_content)
+                "INSERT INTO tips (guild_id, tip_content, message_id, created_at) VALUES (?, ?, 0, ?)",
+                (ctx.guild.id, tip_content, now_ist)
             )
             row = con.execute("SELECT last_insert_rowid() as id").fetchone()
             tip_num = row["id"] if row else 1
@@ -190,14 +191,17 @@ class Community(commands.Cog):
             )
 
             # Persist Team inside DB
+            now_ist = datetime.now(IST).isoformat()
             with db._connect() as con:
                 con.execute(
-                    "INSERT INTO teams (team_name, guild_id, leader_id, text_channel_id, voice_channel_id) VALUES (?, ?, ?, ?, ?)",
-                    (team_name, guild.id, ctx.author.id, text_ch.id, voice_ch.id)
+                    "INSERT INTO teams (team_name, guild_id, leader_id, text_channel_id, voice_channel_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (team_name, guild.id, ctx.author.id, text_ch.id, voice_ch.id, now_ist)
                 )
-                con.execute("INSERT INTO team_members (team_name, guild_id, user_id) VALUES (?, ?, ?)", (team_name, guild.id, ctx.author.id))
-                con.execute("INSERT INTO team_members (team_name, guild_id, user_id) VALUES (?, ?, ?)", (team_name, guild.id, u1.id))
-                con.execute("INSERT INTO team_members (team_name, guild_id, user_id) VALUES (?, ?, ?)", (team_name, guild.id, u2.id))
+                row = con.execute("SELECT last_insert_rowid() as id").fetchone()
+                team_id = row["id"] if row else 1
+                con.execute("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", (team_id, ctx.author.id))
+                con.execute("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", (team_id, u1.id))
+                con.execute("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", (team_id, u2.id))
 
                 # Remove from LFT pool
                 con.execute("DELETE FROM lft_pool WHERE user_id IN (?, ?, ?) AND guild_id = ?", (ctx.author.id, u1.id, u2.id, guild.id))
@@ -258,8 +262,8 @@ class Community(commands.Cog):
             # Save resource in database
             with db._connect() as con:
                 con.execute(
-                    "INSERT INTO resources (user_id, guild_id, resource_url, shared_at) VALUES (?, ?, ?, ?)",
-                    (user_id, guild_id, url, now_ist)
+                    "INSERT INTO resources (guild_id, user_id, link, shared_at) VALUES (?, ?, ?, ?)",
+                    (guild_id, user_id, url, now_ist)
                 )
 
             # Reward +20 XP and +10 coins

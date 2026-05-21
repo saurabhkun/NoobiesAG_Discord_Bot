@@ -117,7 +117,7 @@ def init_db() -> None:
                 user_id         INTEGER NOT NULL,
                 guild_id        INTEGER NOT NULL,
                 achievement_key TEXT NOT NULL,
-                earned_at       TEXT NOT NULL,
+                unlocked_at     TEXT NOT NULL,
                 PRIMARY KEY (user_id, guild_id, achievement_key)
             );
 
@@ -133,26 +133,30 @@ def init_db() -> None:
                 guild_id      INTEGER NOT NULL,
                 season_number INTEGER NOT NULL,
                 winner_id     INTEGER NOT NULL,
+                winner_name   TEXT NOT NULL,
                 points        INTEGER NOT NULL,
                 ended_at      TEXT NOT NULL,
                 PRIMARY KEY (guild_id, season_number)
             );
 
             CREATE TABLE IF NOT EXISTS tips (
-                guild_id   INTEGER NOT NULL,
-                message_id INTEGER PRIMARY KEY,
-                upvotes    INTEGER NOT NULL DEFAULT 0,
-                downvotes  INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
+                tip_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id    INTEGER NOT NULL,
+                message_id  INTEGER,
+                tip_content TEXT NOT NULL,
+                upvotes     INTEGER NOT NULL DEFAULT 0,
+                downvotes   INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS teams (
-                team_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id   INTEGER NOT NULL,
-                team_name  TEXT NOT NULL,
-                role_id    INTEGER NOT NULL,
-                channel_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+                team_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id         INTEGER NOT NULL,
+                team_name        TEXT NOT NULL,
+                leader_id        INTEGER NOT NULL,
+                text_channel_id  INTEGER NOT NULL,
+                voice_channel_id INTEGER NOT NULL,
+                created_at       TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS team_members (
@@ -166,10 +170,8 @@ def init_db() -> None:
                 guild_id   INTEGER NOT NULL,
                 user_id    INTEGER NOT NULL,
                 link       TEXT NOT NULL,
-                topic      TEXT NOT NULL,
-                channel_id INTEGER NOT NULL,
                 shared_at  TEXT NOT NULL,
-                PRIMARY KEY (guild_id, user_id, link, topic)
+                PRIMARY KEY (guild_id, user_id, link)
             );
 
             CREATE TABLE IF NOT EXISTS lft_pool (
