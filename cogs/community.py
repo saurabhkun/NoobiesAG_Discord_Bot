@@ -237,9 +237,6 @@ class Community(commands.Cog):
         if message.author.bot:
             return
 
-        # Ensure other commands are not blocked
-        await self.bot.process_commands(message)
-
         if message.guild is None:
             return
 
