@@ -4,14 +4,23 @@
 
 import sqlite3
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from config import DB_PATH
 
 # ── Internal connection ────────────────────────────────
 
-def _connect() -> sqlite3.Connection:
+@contextmanager
+def _connect():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    return con
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 # ── Initialisation ─────────────────────────────────────

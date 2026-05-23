@@ -116,80 +116,95 @@ class Codeforces(commands.Cog):
     @tasks.loop(seconds=CF_POLL_INTERVAL)
     async def poll_submissions(self) -> None:
         """Check recent submissions for every registered user every 5 minutes."""
-        users = db.get_all_cf_users()
-        if not users:
-            return
+        try:
+            users = db.get_all_cf_users()
+            if not users:
+                return
 
-        for row in users:
-            user_id     = row["user_id"]
-            username    = row["username"]
-            cf_handle   = row["cf_handle"]
-            last_sub_id = row["last_sub_id"]
+            for row in users:
+                user_id     = row["user_id"]
+                username    = row["username"]
+                cf_handle   = row["cf_handle"]
+                last_sub_id = row["last_sub_id"]
 
-            try:
-                url = (
-                    f"{self.CF_BASE}/user.status"
-                    f"?handle={cf_handle}&count={CF_SUBMISSION_COUNT}"
-                )
-                data = await self._get_json(url)
-                if data is None or data.get("status") != "OK":
-                    continue
-
-                submissions: list[dict] = data["result"]
-                new_accepted: list[dict] = []
-                highest_id = last_sub_id
-
-                for sub in submissions:
-                    sub_id = sub["id"]
-                    if sub_id > highest_id:
-                        highest_id = sub_id
-                    if sub_id > last_sub_id and sub.get("verdict") == "OK":
-                        new_accepted.append(sub)
-
-                # Advance watermark regardless of accepted status
-                if highest_id > last_sub_id:
-                    db.update_last_sub_id(user_id, highest_id)
-
-                if not new_accepted:
-                    continue
-
-                # Post into every guild's #cf-activity channel
-                for guild in self.bot.guilds:
-                    channel = discord.utils.get(
-                        guild.channels, name=CF_ACTIVITY_CHANNEL
+                try:
+                    url = (
+                        f"{self.CF_BASE}/user.status"
+                        f"?handle={cf_handle}&count={CF_SUBMISSION_COUNT}"
                     )
-                    if channel is None:
+                    data = await self._get_json(url)
+                    if data is None or data.get("status") != "OK":
                         continue
 
-                    member = guild.get_member(user_id)
-                    mention = member.mention if member else f"**{username}**"
+                    submissions: list[dict] = data["result"]
+                    new_accepted: list[dict] = []
+                    highest_id = last_sub_id
 
-                    for sub in new_accepted:
-                        problem      = sub["problem"]
-                        p_name       = problem.get("name", "Unknown Problem")
-                        contest_id   = problem.get("contestId", "")
-                        p_index      = problem.get("index", "")
-                        p_rating     = problem.get("rating")
-                        problem_url  = (
-                            f"https://codeforces.com/contest/{contest_id}/problem/{p_index}"
-                            if contest_id else "https://codeforces.com"
+                    if not submissions:
+                        continue
+
+                    for sub in submissions:
+                        sub_id = sub["id"]
+                        if sub_id > highest_id:
+                            highest_id = sub_id
+
+                    # If first registration (last_sub_id == 0)
+                    if last_sub_id == 0:
+                        if highest_id > 0:
+                            db.update_last_sub_id(user_id, highest_id)
+                        continue
+
+                    for sub in submissions:
+                        sub_id = sub["id"]
+                        if sub_id > last_sub_id and sub.get("verdict") == "OK":
+                            new_accepted.append(sub)
+
+                    # Advance watermark regardless of accepted status
+                    if highest_id > last_sub_id:
+                        db.update_last_sub_id(user_id, highest_id)
+
+                    if not new_accepted:
+                        continue
+
+                    # Post into every guild's #cf-activity channel
+                    for guild in self.bot.guilds:
+                        channel = discord.utils.get(
+                            guild.channels, name=CF_ACTIVITY_CHANNEL
                         )
+                        if channel is None:
+                            continue
 
-                        embed = cf_submission_embed(
-                            mention      = mention,
-                            cf_handle    = cf_handle,
-                            problem_name = p_name,
-                            problem_url  = problem_url,
-                            contest_id   = contest_id,
-                            rating       = p_rating,
-                        )
-                        await channel.send(embed=embed)
+                        member = guild.get_member(user_id)
+                        mention = member.mention if member else f"**{username}**"
 
-            except Exception as exc:
-                print(f"[CF Poller] Error for {cf_handle}: {exc}")
+                        for sub in new_accepted:
+                            problem      = sub["problem"]
+                            p_name       = problem.get("name", "Unknown Problem")
+                            contest_id   = problem.get("contestId", "")
+                            p_index      = problem.get("index", "")
+                            p_rating     = problem.get("rating")
+                            problem_url  = (
+                                f"https://codeforces.com/contest/{contest_id}/problem/{p_index}"
+                                if contest_id else "https://codeforces.com"
+                            )
 
-            # Small pause between users to avoid hammering the CF API
-            await asyncio.sleep(1.5)
+                            embed = cf_submission_embed(
+                                mention      = mention,
+                                cf_handle    = cf_handle,
+                                problem_name = p_name,
+                                problem_url  = problem_url,
+                                contest_id   = contest_id,
+                                rating       = p_rating,
+                            )
+                            await channel.send(embed=embed)
+
+                except Exception as exc:
+                    print(f"[CF Poller] Error for {cf_handle}: {exc}")
+
+                # Small pause between users to avoid hammering the CF API
+                await asyncio.sleep(1.5)
+        except Exception as e:
+            print(f"[CF Poller Task] Outer Loop Error: {e}")
 
     @poll_submissions.before_loop
     async def before_poll(self) -> None:

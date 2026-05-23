@@ -279,52 +279,55 @@ class Social(commands.Cog):
     @tasks.loop(minutes=2)
     async def vc_monitor_task(self) -> None:
         """Monitor temporary private VCs, auto-delete if empty for 5 minutes."""
-        vcs = db.get_all_vcs()
-        if not vcs:
-            return
+        try:
+            vcs = db.get_all_vcs()
+            if not vcs:
+                return
 
-        for vc_row in vcs:
-            channel_id = vc_row["channel_id"]
-            u1_id = vc_row["user1_id"]
-            u2_id = vc_row["user2_id"]
-            empty_since_str = vc_row["empty_since"]
+            for vc_row in vcs:
+                channel_id = vc_row["channel_id"]
+                u1_id = vc_row["user1_id"]
+                u2_id = vc_row["user2_id"]
+                empty_since_str = vc_row["empty_since"]
 
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                # If deleted manually
-                db.delete_vc(channel_id)
-                continue
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    # If deleted manually
+                    db.delete_vc(channel_id)
+                    continue
 
-            member_count = len(channel.members)
+                member_count = len(channel.members)
 
-            if member_count == 0:
-                if not empty_since_str:
-                    # Mark empty since now
-                    now_str = datetime.now(timezone.utc).isoformat()
-                    db.update_vc_empty_since(channel_id, now_str)
+                if member_count == 0:
+                    if not empty_since_str:
+                        # Mark empty since now
+                        now_str = datetime.now(timezone.utc).isoformat()
+                        db.update_vc_empty_since(channel_id, now_str)
+                    else:
+                        # Calculate duration
+                        empty_since = datetime.fromisoformat(empty_since_str)
+                        elapsed = (datetime.now(timezone.utc) - empty_since).total_seconds()
+                        if elapsed >= 300:  # 5 minutes
+                            try:
+                                await channel.delete(reason="Temporary private VC empty for 5 minutes")
+                                db.delete_vc(channel_id)
+
+                                # Send notification in progress updates
+                                progress_chan = discord.utils.get(channel.guild.channels, name=PROGRESS_CHANNEL)
+                                if progress_chan:
+                                    u1 = channel.guild.get_member(u1_id)
+                                    u2 = channel.guild.get_member(u2_id)
+                                    name1 = u1.mention if u1 else f"User {u1_id}"
+                                    name2 = u2.mention if u2 else f"User {u2_id}"
+                                    await progress_chan.send(f"Session between {name1} and {name2} has ended 👋")
+                            except Exception as e:
+                                print(f"[VC Monitor Task] Error deleting VC: {e}")
                 else:
-                    # Calculate duration
-                    empty_since = datetime.fromisoformat(empty_since_str)
-                    elapsed = (datetime.now(timezone.utc) - empty_since).total_seconds()
-                    if elapsed >= 300:  # 5 minutes
-                        try:
-                            await channel.delete(reason="Temporary private VC empty for 5 minutes")
-                            db.delete_vc(channel_id)
-
-                            # Send notification in progress updates
-                            progress_chan = discord.utils.get(channel.guild.channels, name=PROGRESS_CHANNEL)
-                            if progress_chan:
-                                u1 = channel.guild.get_member(u1_id)
-                                u2 = channel.guild.get_member(u2_id)
-                                name1 = u1.mention if u1 else f"User {u1_id}"
-                                name2 = u2.mention if u2 else f"User {u2_id}"
-                                await progress_chan.send(f"Session between {name1} and {name2} has ended 👋")
-                        except Exception as e:
-                            print(f"[VC Monitor Task] Error deleting VC: {e}")
-            else:
-                if empty_since_str:
-                    # Clear empty since status
-                    db.update_vc_empty_since(channel_id, None)
+                    if empty_since_str:
+                        # Clear empty since status
+                        db.update_vc_empty_since(channel_id, None)
+        except Exception as e:
+            print(f"[VC Monitor Task] Main Loop Error: {e}")
 
     @vc_monitor_task.before_loop
     async def before_vc_monitor(self) -> None:
@@ -333,49 +336,52 @@ class Social(commands.Cog):
     @tasks.loop(minutes=30)
     async def weekly_group_leaderboard(self) -> None:
         """Every Sunday at 8 PM IST, announce group leaderboard in progress-updates."""
-        now = datetime.now(IST)
-        if now.weekday() == 6 and now.hour == 20 and now.minute < 30:
-            # Compile weekly leaderboard
-            groups = db.get_all_groups()
-            if not groups:
-                return
+        try:
+            now = datetime.now(IST)
+            if now.weekday() == 6 and now.hour == 20 and now.minute < 30:
+                # Compile weekly leaderboard
+                groups = db.get_all_groups()
+                if not groups:
+                    return
 
-            leaderboard_data = []
+                leaderboard_data = []
 
-            for g in groups:
-                g_name = g["group_name"]
-                members = db.get_group_members(g_name)
+                for g in groups:
+                    g_name = g["group_name"]
+                    members = db.get_group_members(g_name)
 
-                total_days = 0
-                for m in members:
-                    total_days += m["current_day"] or 0
+                    total_days = 0
+                    for m in members:
+                        total_days += m["current_day"] or 0
 
-                avg_days = total_days / len(members) if members else 0
-                leaderboard_data.append((g_name, total_days, avg_days, len(members)))
+                    avg_days = total_days / len(members) if members else 0
+                    leaderboard_data.append((g_name, total_days, avg_days, len(members)))
 
-            # Sort by total days descending
-            leaderboard_data = sorted(leaderboard_data, key=lambda x: x[1], reverse=True)
+                # Sort by total days descending
+                leaderboard_data = sorted(leaderboard_data, key=lambda x: x[1], reverse=True)
 
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
-                if not channel:
-                    continue
+                for guild in self.bot.guilds:
+                    channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
+                    if not channel:
+                        continue
 
-                lines = []
-                for idx, (name, total, avg, count) in enumerate(leaderboard_data[:10]):
-                    medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "🔹"
-                    lines.append(f"{medal} **{name}** — Total Days: `{total}` | Avg Day: `{avg:.1f}` | Members: `{count}/5`")
+                    lines = []
+                    for idx, (name, total, avg, count) in enumerate(leaderboard_data[:10]):
+                        medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "🔹"
+                        lines.append(f"{medal} **{name}** — Total Days: `{total}` | Avg Day: `{avg:.1f}` | Members: `{count}/5`")
 
-                embed = discord.Embed(
-                    title="🏆 Weekly Study Group Leaderboard",
-                    description=(
-                        "Here are the top performing study groups for this week:\n\n" +
-                        "\n".join(lines)
-                    ),
-                    color=0x9B59B6
-                )
-                embed.set_footer(text="AGNoobies Study Group Arena")
-                await channel.send(embed=embed)
+                    embed = discord.Embed(
+                        title="🏆 Weekly Study Group Leaderboard",
+                        description=(
+                            "Here are the top performing study groups for this week:\n\n" +
+                            "\n".join(lines)
+                        ),
+                        color=0x9B59B6
+                    )
+                    embed.set_footer(text="AGNoobies Study Group Arena")
+                    await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Weekly Group Leaderboard] Main Loop Error: {e}")
 
     @weekly_group_leaderboard.before_loop
     async def before_weekly_leaderboard(self) -> None:

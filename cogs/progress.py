@@ -14,8 +14,8 @@ from utils.helpers import (
 )
 
 _DAY_RE = re.compile(
-    r"\bday[\s\-_]?(\d+)[\s\-_]?(?:lecture[\s\-_]?)?done\b",
-    re.IGNORECASE,
+    r"(?:completed\s+day[\s\-_]*(\d+)|day[\s\-_]*(\d+)[\s\-_]*(?:lecture[\s\-_]*)?(?:done|complete))",
+    re.IGNORECASE
 )
 _TIER_NAMES: set[str] = {t["name"] for t in TIER_ROLES}
 
@@ -32,7 +32,11 @@ class Progress(commands.Cog):
     @staticmethod
     def _parse_day(content: str) -> int | None:
         m = _DAY_RE.search(content)
-        return int(m.group(1)) if m else None
+        if m:
+            val = m.group(1) or m.group(2)
+            if val:
+                return int(val)
+        return None
 
     @staticmethod
     async def _get_or_create_role(guild: discord.Guild, name: str) -> discord.Role:
@@ -119,7 +123,13 @@ class Progress(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        if message.author.bot or message.guild is None:
+        if message.author.bot:
+            return
+
+        # Ensure other commands are not blocked
+        await self.bot.process_commands(message)
+
+        if message.guild is None:
             return
         if message.channel.name != PROGRESS_CHANNEL:
             return

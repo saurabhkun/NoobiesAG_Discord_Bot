@@ -106,6 +106,8 @@ class Bot(commands.Bot):
         await ctx.reply("⚠️ An unexpected error occurred. Please try again later.")
 
 
+from keep_alive import keep_alive
+
 # ── Runner ─────────────────────────────────────────────
 
 async def main() -> None:
@@ -114,4 +116,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    keep_alive()
     asyncio.run(main())
+

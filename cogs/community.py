@@ -234,7 +234,13 @@ class Community(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Scan messages in resources channel, logging Youtube/CF educational link shares and rewarding XP."""
-        if message.author.bot or message.guild is None:
+        if message.author.bot:
+            return
+
+        # Ensure other commands are not blocked
+        await self.bot.process_commands(message)
+
+        if message.guild is None:
             return
 
         if message.channel.name != "resources":

@@ -133,39 +133,42 @@ class Contests(commands.Cog):
     @tasks.loop(hours=1)
     async def contest_alert_task(self) -> None:
         """Checks for upcoming contests and notifies if starting within 1 hour."""
-        data = await self._fetch_json(f"{self.CF_BASE}/contest.list?gym=false")
-        if not data or data.get("status") != "OK":
-            return
+        try:
+            data = await self._fetch_json(f"{self.CF_BASE}/contest.list?gym=false")
+            if not data or data.get("status") != "OK":
+                return
 
-        contests = [c for c in data["result"] if c.get("phase") == "BEFORE"]
-        for c in contests:
-            rel_sec = -c.get("relativeTimeSeconds", 0)
-            c_id = c.get("id")
+            contests = [c for c in data["result"] if c.get("phase") == "BEFORE"]
+            for c in contests:
+                rel_sec = -c.get("relativeTimeSeconds", 0)
+                c_id = c.get("id")
 
-            # If contest starts in less than 1 hour (3600 seconds) and not yet notified
-            if 0 < rel_sec <= 3600 and c_id not in self.notified_contests:
-                self.notified_contests.add(c_id)
+                # If contest starts in less than 1 hour (3600 seconds) and not yet notified
+                if 0 < rel_sec <= 3600 and c_id not in self.notified_contests:
+                    self.notified_contests.add(c_id)
 
-                duration_sec = c.get("durationSeconds", 0)
-                duration_hr = duration_sec // 3600
-                duration_min = (duration_sec % 3600) // 60
-                mins_left = rel_sec // 60
+                    duration_sec = c.get("durationSeconds", 0)
+                    duration_hr = duration_sec // 3600
+                    duration_min = (duration_sec % 3600) // 60
+                    mins_left = rel_sec // 60
 
-                for guild in self.bot.guilds:
-                    channel = discord.utils.get(guild.channels, name=CF_ACTIVITY_CHANNEL)
-                    if not channel:
-                        continue
+                    for guild in self.bot.guilds:
+                        channel = discord.utils.get(guild.channels, name=CF_ACTIVITY_CHANNEL)
+                        if not channel:
+                            continue
 
-                    embed = discord.Embed(
-                        title="🚨 Contest Alert!",
-                        description=(
-                            f"🏆 **{c.get('name')}** is starting in **{mins_left} minutes**!\n\n"
-                            f"> ⏱️ **Duration:** `{duration_hr}h {duration_min}m`\n"
-                            f"> 🔗 **Register now:** [Codeforces Contests](https://codeforces.com/contest/{c_id})"
-                        ),
-                        color=0xE74C3C
-                    )
-                    await channel.send(embed=embed)
+                        embed = discord.Embed(
+                            title="🚨 Contest Alert!",
+                            description=(
+                                f"🏆 **{c.get('name')}** is starting in **{mins_left} minutes**!\n\n"
+                                f"> ⏱️ **Duration:** `{duration_hr}h {duration_min}m`\n"
+                                f"> 🔗 **Register now:** [Codeforces Contests](https://codeforces.com/contest/{c_id})"
+                            ),
+                            color=0xE74C3C
+                        )
+                        await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Contests Alert Task] Loop Error: {e}")
 
     @contest_alert_task.before_loop
     async def before_contest_alert(self) -> None:
@@ -174,186 +177,195 @@ class Contests(commands.Cog):
     @tasks.loop(minutes=10)
     async def weekly_contest_manager(self) -> None:
         """Manages weekly mini-contest: start on Monday 9 AM, end/leaderboard on Sunday 9 PM IST."""
-        now = datetime.now(IST)
-        week_id = now.strftime("%Y-%U") # Current year and week number
+        try:
+            now = datetime.now(IST)
+            week_id = now.strftime("%Y-%U") # Current year and week number
 
-        # Get or create the weekly champion role
-        # We need a temporary "Weekly Champion" role with yellow color
-        async def get_champion_role(guild: discord.Guild) -> discord.Role:
-            role = discord.utils.get(guild.roles, name="Weekly Champion")
-            if not role:
-                role = await guild.create_role(
-                    name="Weekly Champion",
-                    color=discord.Color.from_rgb(241, 196, 15), # yellow
-                    hoist=True,
-                    reason="Weekly Contest reward role"
-                )
-            return role
+            # Get or create the weekly champion role
+            # We need a temporary "Weekly Champion" role with yellow color
+            async def get_champion_role(guild: discord.Guild) -> discord.Role:
+                role = discord.utils.get(guild.roles, name="Weekly Champion")
+                if not role:
+                    role = await guild.create_role(
+                        name="Weekly Champion",
+                        color=discord.Color.from_rgb(241, 196, 15), # yellow
+                        hoist=True,
+                        reason="Weekly Contest reward role"
+                    )
+                return role
 
-        # Monday 9 AM start check
-        # We only announce if this week has not been announced yet
-        with db._connect() as con:
-            active_week = con.execute("SELECT * FROM weekly_contest WHERE week_id = ?", (week_id,)).fetchone()
-
-        if not active_week and now.weekday() == 0 and now.hour >= 9:
-            # Generate 3 problems: 1000, 1300, 1600 rating
-            p1_str = await self._get_random_problem(1000) or "1200_A_fallback"
-            p2_str = await self._get_random_problem(1300) or "1300_A_fallback"
-            p3_str = await self._get_random_problem(1600) or "1600_A_fallback"
-
+            # Monday 9 AM start check
+            # We only announce if this week has not been announced yet
             with db._connect() as con:
-                con.execute(
-                    "INSERT OR IGNORE INTO weekly_contest (week_id, p1, p2, p3) VALUES (?, ?, ?, ?)",
-                    (week_id, p1_str, p2_str, p3_str)
-                )
+                active_week = con.execute("SELECT * FROM weekly_contest WHERE week_id = ?", (week_id,)).fetchone()
 
-            # Announce in cf-activity
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.channels, name=CF_ACTIVITY_CHANNEL)
-                if not channel:
-                    continue
+            if not active_week and now.weekday() == 0 and now.hour >= 9:
+                # Generate 3 problems: 1000, 1300, 1600 rating
+                p1_str = await self._get_random_problem(1000) or "1200_A_fallback"
+                p2_str = await self._get_random_problem(1300) or "1300_A_fallback"
+                p3_str = await self._get_random_problem(1600) or "1600_A_fallback"
 
-                def make_url(p_str):
-                    parts = p_str.split("_")
-                    return f"https://codeforces.com/contest/{parts[0]}/problem/{parts[1]}"
-
-                embed = discord.Embed(
-                    title="🏆 Weekly Mini-Contest is LIVE!",
-                    description=(
-                        f"Grinders, a new week has started! Solve these 3 problems before Sunday 9 PM to win the **Weekly Champion** title!\n\n"
-                        f"1️⃣ **Div3 Easy (Rating 1000):** [{p1_str.split('_')[2]}]({make_url(p1_str)})\n"
-                        f"2️⃣ **Div2 Medium (Rating 1300):** [{p2_str.split('_')[2]}]({make_url(p2_str)})\n"
-                        f"3️⃣ **Div1 Easy / Div2 Hard (Rating 1600):** [{p3_str.split('_')[2]}]({make_url(p3_str)})\n\n"
-                        f"Bot will track your submissions automatically. Good luck! **AC** is the goal! 🚀"
-                    ),
-                    color=0xF1C40F
-                )
-                await channel.send(embed=embed)
-
-        # Sync solves via CF API for all active week problems
-        if active_week:
-            users = db.get_all_cf_users()
-            p1, p2, p3 = active_week["p1"], active_week["p2"], active_week["p3"]
-            p_keys = {p1.split("_")[0] + p1.split("_")[1], p2.split("_")[0] + p2.split("_")[1], p3.split("_")[0] + p3.split("_")[1]}
-
-            for user_row in users:
-                user_id = user_row["user_id"]
-                cf_handle = user_row["cf_handle"]
-
-                try:
-                    url = f"{self.CF_BASE}/user.status?handle={cf_handle}&count=15"
-                    sub_data = await self._fetch_json(url)
-                    if sub_data and sub_data.get("status") == "OK":
-                        for sub in sub_data["result"]:
-                            if sub.get("verdict") == "OK":
-                                prob = sub.get("problem", {})
-                                c_id = prob.get("contestId")
-                                idx = prob.get("index")
-                                if c_id and idx:
-                                    key = f"{c_id}{idx}"
-                                    if key in p_keys:
-                                        # Record solve
-                                        with db._connect() as con:
-                                            con.execute(
-                                                "INSERT OR IGNORE INTO weekly_solves (user_id, week_id, p_key) VALUES (?, ?, ?)",
-                                                (user_id, week_id, key)
-                                            )
-                except Exception as e:
-                    print(f"[Contests Weekly Sync] Error syncing {cf_handle}: {e}")
-
-        # Sunday 9 PM end check
-        # We only compile leaderboard once. Let's make sure we do it on Sunday 9 PM IST.
-        # We can write a flag in DB or check if we already announced the results for this week_id.
-        if now.weekday() == 6 and now.hour == 21 and now.minute < 15:
-            # Check if leaderboard already posted
-            with db._connect() as con:
-                leaderboard_posted = con.execute(
-                    "SELECT COUNT(*) as count FROM weekly_solves WHERE week_id = ? AND p_key = 'LEADERBOARD_POSTED'",
-                    (week_id,)
-                ).fetchone()
-
-            if leaderboard_posted["count"] == 0 and active_week:
-                # Mark as posted
                 with db._connect() as con:
                     con.execute(
-                        "INSERT OR IGNORE INTO weekly_solves (user_id, week_id, p_key) VALUES (0, ?, 'LEADERBOARD_POSTED')",
-                        (week_id,)
+                        "INSERT OR IGNORE INTO weekly_contest (week_id, p1, p2, p3) VALUES (?, ?, ?, ?)",
+                        (week_id, p1_str, p2_str, p3_str)
                     )
 
-                # Get all solves for this week
-                with db._connect() as con:
-                    solves = con.execute(
-                        "SELECT user_id, COUNT(*) as count FROM weekly_solves WHERE week_id = ? AND user_id != 0 GROUP BY user_id",
-                        (week_id,)
-                    ).fetchall()
-
-                # Sort by count descending
-                solves = sorted(solves, key=lambda s: s["count"], reverse=True)
-
+                # Announce in cf-activity
                 for guild in self.bot.guilds:
                     channel = discord.utils.get(guild.channels, name=CF_ACTIVITY_CHANNEL)
                     if not channel:
                         continue
 
-                    # Compile leaderboard
-                    leaderboard_lines = []
-                    winner_id = None
-                    max_solves = 0
-
-                    for idx, row in enumerate(solves):
-                        m_id = row["user_id"]
-                        cnt = row["count"]
-                        member = guild.get_member(m_id)
-                        name = member.display_name if member else f"User {m_id}"
-
-                        if idx == 0 and cnt > 0:
-                            winner_id = m_id
-                            max_solves = cnt
-
-                        medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "🔹"
-                        leaderboard_lines.append(f"{medal} **{name}** solved `{cnt}/3` problems")
-
-                    if not leaderboard_lines:
-                        leaderboard_lines.append("No solves recorded this week! Come on grinders! 😤")
-
-                    # Handle Weekly Champion role reassignment
-                    champ_role = await get_champion_role(guild)
-                    # Remove from all current members holding it
-                    for m in champ_role.members:
-                        await m.remove_roles(champ_role, reason="Weekly mini-contest end: stripping old champ")
-
-                    winner_announce = ""
-                    if winner_id:
-                        winner_member = guild.get_member(winner_id)
-                        if winner_member:
-                            await winner_member.add_roles(champ_role, reason="Weekly mini-contest winner!")
-                            winner_announce = f"\n👑 **Congratulations to our Weekly Champion:** {winner_member.mention}! They solved `{max_solves}` problems! 🏆"
-                            
-                            # Award XP and Coins (+200 XP, +100 coins)
-                            from cogs.economy import award_xp_and_coins
-                            try:
-                                await award_xp_and_coins(self.bot, guild, winner_id, 200, 100, reason="contest_won")
-                            except Exception as e:
-                                print(f"[Weekly Contest XP Award] Error: {e}")
-
-                            # Trigger achievements check
-                            try:
-                                ach_cog = self.bot.get_cog("Achievements")
-                                if ach_cog:
-                                    await ach_cog.check_achievements(guild, winner_id)
-                            except Exception as e:
-                                print(f"[Weekly Contest Achievements] Error: {e}")
+                    def make_url(p_str):
+                        parts = p_str.split("_")
+                        return f"https://codeforces.com/contest/{parts[0]}/problem/{parts[1]}"
 
                     embed = discord.Embed(
-                        title="🏆 Weekly Mini-Contest Standings!",
+                        title="🏆 Weekly Mini-Contest is LIVE!",
                         description=(
-                            "Here is the final standings table for this week's mini-contest:\n\n" +
-                            "\n".join(leaderboard_lines) +
-                            winner_announce
+                            f"Grinders, a new week has started! Solve these 3 problems before Sunday 9 PM to win the **Weekly Champion** title!\n\n"
+                            f"1️⃣ **Div3 Easy (Rating 1000):** [{p1_str.split('_')[2]}]({make_url(p1_str)})\n"
+                            f"2️⃣ **Div2 Medium (Rating 1300):** [{p2_str.split('_')[2]}]({make_url(p2_str)})\n"
+                            f"3️⃣ **Div1 Easy / Div2 Hard (Rating 1600):** [{p3_str.split('_')[2]}]({make_url(p3_str)})\n\n"
+                            f"Bot will track your submissions automatically. Good luck! **AC** is the goal! 🚀"
                         ),
                         color=0xF1C40F
                     )
                     await channel.send(embed=embed)
+
+            # Sync solves via CF API for all active week problems
+            if active_week:
+                users = db.get_all_cf_users()
+                p1, p2, p3 = active_week["p1"], active_week["p2"], active_week["p3"]
+                p_keys = {p1.split("_")[0] + p1.split("_")[1], p2.split("_")[0] + p2.split("_")[1], p3.split("_")[0] + p3.split("_")[1]}
+
+                for user_row in users:
+                    user_id = user_row["user_id"]
+                    cf_handle = user_row["cf_handle"]
+
+                    try:
+                        url = f"{self.CF_BASE}/user.status?handle={cf_handle}&count=15"
+                        sub_data = await self._fetch_json(url)
+                        if sub_data and sub_data.get("status") == "OK":
+                            for sub in sub_data["result"]:
+                                if sub.get("verdict") == "OK":
+                                    prob = sub.get("problem", {})
+                                    c_id = prob.get("contestId")
+                                    idx = prob.get("index")
+                                    if c_id and idx:
+                                        key = f"{c_id}{idx}"
+                                        if key in p_keys:
+                                            # Record solve
+                                            with db._connect() as con:
+                                                con.execute(
+                                                    "INSERT OR IGNORE INTO weekly_solves (user_id, week_id, p_key) VALUES (?, ?, ?)",
+                                                    (user_id, week_id, key)
+                                                )
+                    except Exception as e:
+                        print(f"[Contests Weekly Sync] Error syncing {cf_handle}: {e}")
+
+            # Sunday 9 PM end check
+            # We only compile leaderboard once. Let's make sure we do it on Sunday 9 PM IST.
+            # We can write a flag in DB or check if we already announced the results for this week_id.
+            if now.weekday() == 6 and now.hour == 21 and now.minute < 15:
+                # Check if leaderboard already posted
+                with db._connect() as con:
+                    leaderboard_posted = con.execute(
+                        "SELECT COUNT(*) as count FROM weekly_solves WHERE week_id = ? AND p_key = 'LEADERBOARD_POSTED'",
+                        (week_id,)
+                    ).fetchone()
+
+                if leaderboard_posted["count"] == 0 and active_week:
+                    # Mark as posted
+                    with db._connect() as con:
+                        con.execute(
+                            "INSERT OR IGNORE INTO weekly_solves (user_id, week_id, p_key) VALUES (0, ?, 'LEADERBOARD_POSTED')",
+                            (week_id,)
+                        )
+
+                    # Get all solves for this week
+                    with db._connect() as con:
+                        solves = con.execute(
+                            "SELECT user_id, COUNT(*) as count FROM weekly_solves WHERE week_id = ? AND user_id != 0 GROUP BY user_id",
+                            (week_id,)
+                        ).fetchall()
+
+                    # Sort by count descending
+                    solves = sorted(solves, key=lambda s: s["count"], reverse=True)
+
+                    for guild in self.bot.guilds:
+                        channel = discord.utils.get(guild.channels, name=CF_ACTIVITY_CHANNEL)
+                        if not channel:
+                            continue
+
+                        # Compile leaderboard
+                        leaderboard_lines = []
+                        winner_id = None
+                        max_solves = 0
+
+                        for idx, row in enumerate(solves):
+                            m_id = row["user_id"]
+                            cnt = row["count"]
+                            member = guild.get_member(m_id)
+                            name = member.display_name if member else f"User {m_id}"
+
+                            if idx == 0 and cnt > 0:
+                                winner_id = m_id
+                                max_solves = cnt
+
+                            medal = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else "🔹"
+                            leaderboard_lines.append(f"{medal} **{name}** solved `{cnt}/3` problems")
+
+                        if not leaderboard_lines:
+                            leaderboard_lines.append("No solves recorded this week! Come on grinders! 😤")
+
+                        # Handle Weekly Champion role reassignment
+                        champ_role = await get_champion_role(guild)
+                        # Remove from all current members holding it
+                        for m in champ_role.members:
+                            try:
+                                await m.remove_roles(champ_role, reason="Weekly mini-contest end: stripping old champ")
+                            except discord.Forbidden:
+                                print(f"[Contests Weekly End] [ERROR] FORBIDDEN stripping role from {m}")
+
+                        winner_announce = ""
+                        if winner_id:
+                            winner_member = guild.get_member(winner_id)
+                            if winner_member:
+                                try:
+                                    await winner_member.add_roles(champ_role, reason="Weekly mini-contest winner!")
+                                except discord.Forbidden:
+                                    print(f"[Contests Weekly End] [ERROR] FORBIDDEN adding role to {winner_member}")
+                                winner_announce = f"\n👑 **Congratulations to our Weekly Champion:** {winner_member.mention}! They solved `{max_solves}` problems! 🏆"
+                                
+                                # Award XP and Coins (+200 XP, +100 coins)
+                                from cogs.economy import award_xp_and_coins
+                                try:
+                                    await award_xp_and_coins(self.bot, guild, winner_id, 200, 100, reason="contest_won")
+                                except Exception as e:
+                                    print(f"[Weekly Contest XP Award] Error: {e}")
+
+                                # Trigger achievements check
+                                try:
+                                    ach_cog = self.bot.get_cog("Achievements")
+                                    if ach_cog:
+                                        await ach_cog.check_achievements(guild, winner_id)
+                                except Exception as e:
+                                    print(f"[Weekly Contest Achievements] Error: {e}")
+
+                        embed = discord.Embed(
+                            title="🏆 Weekly Mini-Contest Standings!",
+                            description=(
+                                "Here is the final standings table for this week's mini-contest:\n\n" +
+                                "\n".join(leaderboard_lines) +
+                                winner_announce
+                            ),
+                            color=0xF1C40F
+                        )
+                        await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Contests Weekly Manager Task] Loop Error: {e}")
 
     @commands.command(name="weeklyresults", aliases=["weekly_results", "weekly", "mini_contest"])
     @commands.guild_only()

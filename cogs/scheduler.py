@@ -87,43 +87,46 @@ class Scheduler(commands.Cog):
     @tasks.loop(hours=24)
     async def daily_morning_task(self) -> None:
         """Sends a beautiful daily morning motivation card at 8 AM IST."""
-        now = datetime.now(IST)
-        target = now.replace(hour=8, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
+        try:
+            now = datetime.now(IST)
+            target = now.replace(hour=8, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
 
-        delay = (target - now).total_seconds()
-        print(f"[Scheduler Morning] Waiting {delay} seconds until next 8 AM IST.")
-        await asyncio.sleep(delay)
+            delay = (target - now).total_seconds()
+            print(f"[Scheduler Morning] Waiting {delay} seconds until next 8 AM IST.")
+            await asyncio.sleep(delay)
 
-        # Get top grinder
-        progress_rows = db.get_all_progress()
-        top_user = "None"
-        top_day = 0
+            # Get top grinder
+            progress_rows = db.get_all_progress()
+            top_user = "None"
+            top_day = 0
 
-        if progress_rows:
-            best_row = max(progress_rows, key=lambda r: r["current_day"])
-            top_user = best_row["username"].split("#")[0]
-            top_day = best_row["current_day"]
+            if progress_rows:
+                best_row = max(progress_rows, key=lambda r: r["current_day"])
+                top_user = best_row["username"].split("#")[0]
+                top_day = best_row["current_day"]
 
-        quote = random.choice(CP_QUOTES)
+            quote = random.choice(CP_QUOTES)
 
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
-            if not channel:
-                continue
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
+                if not channel:
+                    continue
 
-            embed = discord.Embed(
-                title="☀️ Good Morning, Coders!",
-                description=(
-                    f"**Today's Goal:** Stay consistent, solve at least 1 problem! 🎯\n\n"
-                    f"🏆 **Current Top Grinder:** `{top_user}` at Day **{top_day}**\n"
-                    f"💬 **Remember:** *\"{quote}\"*"
-                ),
-                color=0xF1C40F
-            )
-            embed.set_footer(text="AGNoobies Daily Grind")
-            await channel.send(embed=embed)
+                embed = discord.Embed(
+                    title="☀️ Good Morning, Coders!",
+                    description=(
+                        f"**Today's Goal:** Stay consistent, solve at least 1 problem! 🎯\n\n"
+                        f"🏆 **Current Top Grinder:** `{top_user}` at Day **{top_day}**\n"
+                        f"💬 **Remember:** *\"{quote}\"*"
+                    ),
+                    color=0xF1C40F
+                )
+                embed.set_footer(text="AGNoobies Daily Grind")
+                await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Scheduler Daily Morning Task] Loop Error: {e}")
 
     @daily_morning_task.before_loop
     async def before_morning(self) -> None:
@@ -132,99 +135,102 @@ class Scheduler(commands.Cog):
     @tasks.loop(hours=24)
     async def streak_reset_checker(self) -> None:
         """Every day at midnight IST, checks active streaks and applies warning/resets."""
-        now = datetime.now(IST)
-        target = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
+        try:
+            now = datetime.now(IST)
+            target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
 
-        delay = (target - now).total_seconds()
-        print(f"[Scheduler Midnight] Waiting {delay} seconds until next midnight IST.")
-        await asyncio.sleep(delay)
+            delay = (target - now).total_seconds()
+            print(f"[Scheduler Midnight] Waiting {delay} seconds until next midnight IST.")
+            await asyncio.sleep(delay)
 
-        # Run streak checks
-        progress_rows = db.get_all_progress()
-        if not progress_rows:
-            return
+            # Run streak checks
+            progress_rows = db.get_all_progress()
+            if not progress_rows:
+                return
 
-        utc_now = datetime.now(timezone.utc)
-        beginner_tier = TIER_ROLES[0] # Beginner
+            utc_now = datetime.now(timezone.utc)
+            beginner_tier = TIER_ROLES[0] # Beginner
 
-        for row in progress_rows:
-            user_id = row["user_id"]
-            username = row["username"]
-            current_day = row["current_day"]
-            updated_at_str = row["updated_at"]
+            for row in progress_rows:
+                user_id = row["user_id"]
+                username = row["username"]
+                current_day = row["current_day"]
+                updated_at_str = row["updated_at"]
 
-            if current_day == 0:
-                continue
+                if current_day == 0:
+                    continue
 
-            try:
-                last_update = datetime.fromisoformat(updated_at_str)
-                delta_days = (utc_now - last_update).days
+                try:
+                    last_update = datetime.fromisoformat(updated_at_str)
+                    delta_days = (utc_now - last_update).days
 
-                # Check if they have an active freeze used in the last 2 days
-                has_active_freeze = False
-                freeze_row = db.get_freeze(user_id)
-                if freeze_row:
-                    last_used_str = freeze_row["last_freeze_used"]
-                    last_used_date = datetime.fromisoformat(last_used_str).date()
-                    # If freeze used yesterday or today
-                    if (utc_now.date() - last_used_date).days <= 2:
-                        has_active_freeze = True
+                    # Check if they have an active freeze used in the last 2 days
+                    has_active_freeze = False
+                    freeze_row = db.get_freeze(user_id)
+                    if freeze_row:
+                        last_used_str = freeze_row["last_freeze_used"]
+                        last_used_date = datetime.fromisoformat(last_used_str).date()
+                        # If freeze used yesterday or today
+                        if (utc_now.date() - last_used_date).days <= 2:
+                            has_active_freeze = True
 
-                # If they have an active freeze, give them 1 day extension
-                effective_delta = delta_days - 1 if has_active_freeze else delta_days
+                    # If they have an active freeze, give them 1 day extension
+                    effective_delta = delta_days - 1 if has_active_freeze else delta_days
 
-                if effective_delta == 2:
-                    # DM Warning
-                    for guild in self.bot.guilds:
-                        member = guild.get_member(user_id)
-                        if member:
-                            try:
-                                await member.send(
-                                    f"⚠️ **Hey {member.display_name}!** You haven't updated your progress in **2 days**.\n"
-                                    f"Submit your next update in #{PROGRESS_CHANNEL} today, or your streak will **reset tomorrow**! 📉"
-                                )
-                                print(f"[Scheduler Reset] Sent warning DM to {username}")
-                            except discord.Forbidden:
-                                print(f"[Scheduler Reset] Failed to DM warning to {username} (DMs closed)")
-                            break
+                    if effective_delta == 2:
+                        # DM Warning
+                        for guild in self.bot.guilds:
+                            member = guild.get_member(user_id)
+                            if member:
+                                try:
+                                    await member.send(
+                                        f"⚠️ **Hey {member.display_name}!** You haven't updated your progress in **2 days**.\n"
+                                        f"Submit your next update in #{PROGRESS_CHANNEL} today, or your streak will **reset tomorrow**! 📉"
+                                    )
+                                    print(f"[Scheduler Reset] Sent warning DM to {username}")
+                                except discord.Forbidden:
+                                    print(f"[Scheduler Reset] Failed to DM warning to {username} (DMs closed)")
+                                break
 
-                elif effective_delta >= 3:
-                    # Reset Streak
-                    db.reset_progress(user_id)
-                    print(f"[Scheduler Reset] Streak reset for {username} (Day {current_day} → 0)")
+                    elif effective_delta >= 3:
+                        # Reset Streak
+                        db.reset_progress(user_id)
+                        print(f"[Scheduler Reset] Streak reset for {username} (Day {current_day} → 0)")
 
-                    # Strip roles and assign Beginner
-                    for guild in self.bot.guilds:
-                        member = guild.get_member(user_id)
-                        if member:
-                            # Strip all day/tier roles
-                            tier_names = {t["name"] for t in TIER_ROLES}
-                            roles_to_remove = [r for r in member.roles if r.name in tier_names or r.name.startswith("Day ")]
-                            try:
-                                if roles_to_remove:
-                                    await member.remove_roles(*roles_to_remove, reason="Streak reset: inactive for 3 days")
-                                
-                                # Assign Beginner
-                                beginner_role = discord.utils.get(guild.roles, name=beginner_tier["name"])
-                                if beginner_role:
-                                    await member.add_roles(beginner_role, reason="Streak reset: set to Beginner")
-                            except discord.Forbidden:
-                                print(f"[Scheduler Reset] [ERROR] FORBIDDEN resetting roles for {username}")
+                        # Strip roles and assign Beginner
+                        for guild in self.bot.guilds:
+                            member = guild.get_member(user_id)
+                            if member:
+                                # Strip all day/tier roles
+                                tier_names = {t["name"] for t in TIER_ROLES}
+                                roles_to_remove = [r for r in member.roles if r.name in tier_names or r.name.startswith("Day ")]
+                                try:
+                                    if roles_to_remove:
+                                        await member.remove_roles(*roles_to_remove, reason="Streak reset: inactive for 3 days")
+                                    
+                                    # Assign Beginner
+                                    beginner_role = discord.utils.get(guild.roles, name=beginner_tier["name"])
+                                    if beginner_role:
+                                        await member.add_roles(beginner_role, reason="Streak reset: set to Beginner")
+                                except discord.Forbidden:
+                                    print(f"[Scheduler Reset] [ERROR] FORBIDDEN resetting roles for {username}")
 
-                            # Notify via DM
-                            try:
-                                await member.send(
-                                    f"❌ **Streak Reset!** You haven't updated your progress in **3 days**.\n"
-                                    f"Your progress has been reset to **Day 0** and your rank has been set back to **Beginner**.\n"
-                                    f"Grind again to regain your consistency! 💪"
-                                )
-                            except discord.Forbidden:
-                                pass
-                            break
-            except Exception as e:
-                print(f"[Scheduler Reset] Error checking {username}: {e}")
+                                # Notify via DM
+                                try:
+                                    await member.send(
+                                        f"❌ **Streak Reset!** You haven't updated your progress in **3 days**.\n"
+                                        f"Your progress has been reset to **Day 0** and your rank has been set back to **Beginner**.\n"
+                                        f"Grind again to regain your consistency! 💪"
+                                    )
+                                except discord.Forbidden:
+                                    pass
+                                break
+                except Exception as e:
+                    print(f"[Scheduler Reset] Error checking {username}: {e}")
+        except Exception as e:
+            print(f"[Scheduler Streak Reset Checker] Loop Error: {e}")
 
     @streak_reset_checker.before_loop
     async def before_reset(self) -> None:

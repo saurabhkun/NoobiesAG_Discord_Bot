@@ -49,52 +49,55 @@ class Analytics(commands.Cog):
     @tasks.loop(hours=24)
     async def sunday_reminder(self) -> None:
         """Every Sunday morning at 10 AM IST, reminds users of their pending upsolves."""
-        now = datetime.now(IST)
-        # Check if today is Sunday
-        if now.weekday() != 6: # Sunday = 6
-            return
+        try:
+            now = datetime.now(IST)
+            # Check if today is Sunday
+            if now.weekday() != 6: # Sunday = 6
+                return
 
-        # Target time 10:00 AM IST
-        target = now.replace(hour=10, minute=0, second=0, microsecond=0)
-        # Let's say if we are within 30 minutes of 10 AM
-        time_diff = abs((now - target).total_seconds())
-        if time_diff > 1800: # 30 mins
-            return
+            # Target time 10:00 AM IST
+            target = now.replace(hour=10, minute=0, second=0, microsecond=0)
+            # Let's say if we are within 30 minutes of 10 AM
+            time_diff = abs((now - target).total_seconds())
+            if time_diff > 1800: # 30 mins
+                return
 
-        # Compile upsolve counts for all active users
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name="cf-activity")
-            if not channel:
-                continue
+            # Compile upsolve counts for all active users
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.channels, name="cf-activity")
+                if not channel:
+                    continue
 
-            with db._connect() as con:
-                rows = con.execute(
-                    "SELECT user_id, COUNT(*) as count FROM upsolves WHERE guild_id = ? AND solved = 0 GROUP BY user_id",
-                    (guild.id,)
-                ).fetchall()
+                with db._connect() as con:
+                    rows = con.execute(
+                        "SELECT user_id, COUNT(*) as count FROM upsolves WHERE guild_id = ? AND solved = 0 GROUP BY user_id",
+                        (guild.id,)
+                    ).fetchall()
 
-            if not rows:
-                continue
+                if not rows:
+                    continue
 
-            lines = []
-            for row in rows:
-                member = guild.get_member(row["user_id"])
-                if member and row["count"] > 0:
-                    lines.append(f"• {member.mention} has **{row['count']}** pending upsolve(s)!")
+                lines = []
+                for row in rows:
+                    member = guild.get_member(row["user_id"])
+                    if member and row["count"] > 0:
+                        lines.append(f"• {member.mention} has **{row['count']}** pending upsolve(s)!")
 
-            if lines:
-                embed = discord.Embed(
-                    title="📅 Weekly Upsolve Reminder!",
-                    description=(
-                        "Sunday is upsolving day, grinders! 🦾 Clean up your backlog and learn from your contest mistakes!\n\n"
-                        "**Pending Backlog Summary:**\n" +
-                        "\n".join(lines) +
-                        "\n\nUse `!myupsolves` to view your personal list and get solving! 🚀"
-                    ),
-                    color=0x9B59B6
-                )
-                embed.set_footer(text="AGNoobies Upsolve Automation")
-                await channel.send(embed=embed)
+                if lines:
+                    embed = discord.Embed(
+                        title="📅 Weekly Upsolve Reminder!",
+                        description=(
+                            "Sunday is upsolving day, grinders! 🦾 Clean up your backlog and learn from your contest mistakes!\n\n"
+                            "**Pending Backlog Summary:**\n" +
+                            "\n".join(lines) +
+                            "\n\nUse `!myupsolves` to view your personal list and get solving! 🚀"
+                        ),
+                        color=0x9B59B6
+                    )
+                    embed.set_footer(text="AGNoobies Upsolve Automation")
+                    await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Analytics Sunday Reminder Task] Loop Error: {e}")
 
     @sunday_reminder.before_loop
     async def before_reminder(self) -> None:

@@ -221,142 +221,145 @@ class Problems(commands.Cog):
     @tasks.loop(minutes=5)
     async def duel_checker(self) -> None:
         """Check all active duels for AC submissions or expiration."""
-        active_duels = db.get_all_active_duels()
-        if not active_duels:
-            return
+        try:
+            active_duels = db.get_all_active_duels()
+            if not active_duels:
+                return
 
-        for duel in active_duels:
-            c_id = duel["challenger_id"]
-            o_id = duel["challenged_id"]
-            start_str = duel["start_time"]
-            duration = duel["duration"]
-            prob_name = duel["problem_name"]
-            prob_url = duel["problem_url"]
+            for duel in active_duels:
+                c_id = duel["challenger_id"]
+                o_id = duel["challenged_id"]
+                start_str = duel["start_time"]
+                duration = duel["duration"]
+                prob_name = duel["problem_name"]
+                prob_url = duel["problem_url"]
 
-            c_row = db.get_cf_user(c_id)
-            o_row = db.get_cf_user(o_id)
+                c_row = db.get_cf_user(c_id)
+                o_row = db.get_cf_user(o_id)
 
-            if not c_row or not o_row:
-                continue
+                if not c_row or not o_row:
+                    continue
 
-            c_handle = c_row["cf_handle"]
-            o_handle = o_row["cf_handle"]
+                c_handle = c_row["cf_handle"]
+                o_handle = o_row["cf_handle"]
 
-            start_time = datetime.fromisoformat(start_str)
-            now = datetime.now(timezone.utc)
-            elapsed = (now - start_time).total_seconds()
+                start_time = datetime.fromisoformat(start_str)
+                now = datetime.now(timezone.utc)
+                elapsed = (now - start_time).total_seconds()
 
-            # Fetch recent status
-            c_subs = await self._fetch_json(f"{self.CF_BASE}/user.status?handle={c_handle}&count=10")
-            o_subs = await self._fetch_json(f"{self.CF_BASE}/user.status?handle={o_handle}&count=10")
+                # Fetch recent status
+                c_subs = await self._fetch_json(f"{self.CF_BASE}/user.status?handle={c_handle}&count=10")
+                o_subs = await self._fetch_json(f"{self.CF_BASE}/user.status?handle={o_handle}&count=10")
 
-            c_ac_time = None
-            o_ac_time = None
+                c_ac_time = None
+                o_ac_time = None
 
-            def get_ac_time(subs_data):
-                if not subs_data or subs_data.get("status") != "OK":
+                def get_ac_time(subs_data):
+                    if not subs_data or subs_data.get("status") != "OK":
+                        return None
+                    for sub in subs_data["result"]:
+                        if sub.get("verdict") == "OK":
+                            prob = sub.get("problem", {})
+                            p_name = prob.get("name")
+                            if p_name == prob_name:
+                                sub_time = datetime.fromtimestamp(sub["creationTimeSeconds"], tz=timezone.utc)
+                                if sub_time >= start_time:
+                                    return sub_time
                     return None
-                for sub in subs_data["result"]:
-                    if sub.get("verdict") == "OK":
-                        prob = sub.get("problem", {})
-                        p_name = prob.get("name")
-                        if p_name == prob_name:
-                            sub_time = datetime.fromtimestamp(sub["creationTimeSeconds"], tz=timezone.utc)
-                            if sub_time >= start_time:
-                                return sub_time
-                return None
 
-            c_ac_time = get_ac_time(c_subs)
-            o_ac_time = get_ac_time(o_subs)
+                c_ac_time = get_ac_time(c_subs)
+                o_ac_time = get_ac_time(o_subs)
 
-            winner_id = None
-            status = "active"
+                winner_id = None
+                status = "active"
 
-            if c_ac_time and o_ac_time:
-                if c_ac_time < o_ac_time:
+                if c_ac_time and o_ac_time:
+                    if c_ac_time < o_ac_time:
+                        winner_id = c_id
+                        status = "challenger_won"
+                    elif o_ac_time < c_ac_time:
+                        winner_id = o_id
+                        status = "challenged_won"
+                    else:
+                        status = "draw"
+                elif c_ac_time:
                     winner_id = c_id
                     status = "challenger_won"
-                elif o_ac_time < c_ac_time:
+                elif o_ac_time:
                     winner_id = o_id
                     status = "challenged_won"
-                else:
-                    status = "draw"
-            elif c_ac_time:
-                winner_id = c_id
-                status = "challenger_won"
-            elif o_ac_time:
-                winner_id = o_id
-                status = "challenged_won"
-            elif elapsed >= duration:
-                status = "expired"
+                elif elapsed >= duration:
+                    status = "expired"
 
-            if status != "active":
-                db.update_duel_status(c_id, o_id, start_str, status, winner_id)
+                if status != "active":
+                    db.update_duel_status(c_id, o_id, start_str, status, winner_id)
 
-                # Announce in a suitable channel
-                for guild in self.bot.guilds:
-                    channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
-                    if not channel:
-                        continue
+                    # Announce in a suitable channel
+                    for guild in self.bot.guilds:
+                        channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
+                        if not channel:
+                            continue
 
-                    c_member = guild.get_member(c_id)
-                    o_member = guild.get_member(o_id)
-                    if not c_member or not o_member:
-                        continue
+                        c_member = guild.get_member(c_id)
+                        o_member = guild.get_member(o_id)
+                        if not c_member or not o_member:
+                            continue
 
-                    if status in ["challenger_won", "challenged_won"]:
-                        w_member = c_member if winner_id == c_id else o_member
-                        l_member = o_member if winner_id == c_id else c_member
-                        w_handle = c_handle if winner_id == c_id else o_handle
-                        l_handle = o_handle if winner_id == c_id else c_handle
+                        if status in ["challenger_won", "challenged_won"]:
+                            w_member = c_member if winner_id == c_id else o_member
+                            l_member = o_member if winner_id == c_id else c_member
+                            w_handle = c_handle if winner_id == c_id else o_handle
+                            l_handle = o_handle if winner_id == c_id else c_handle
 
-                        # Award XP & Coins (+100 XP, +50 coins)
-                        from cogs.economy import award_xp_and_coins
-                        try:
-                            await award_xp_and_coins(self.bot, guild, winner_id, 100, 50, reason="duel_won")
-                        except Exception as e:
-                            print(f"[Duel XP Award] Error: {e}")
+                            # Award XP & Coins (+100 XP, +50 coins)
+                            from cogs.economy import award_xp_and_coins
+                            try:
+                                await award_xp_and_coins(self.bot, guild, winner_id, 100, 50, reason="duel_won")
+                            except Exception as e:
+                                print(f"[Duel XP Award] Error: {e}")
 
-                        # Trigger achievements check
-                        try:
-                            ach_cog = self.bot.get_cog("Achievements")
-                            if ach_cog:
-                                await ach_cog.check_achievements(guild, winner_id)
-                        except Exception as e:
-                            print(f"[Duel Achievements] Error: {e}")
+                            # Trigger achievements check
+                            try:
+                                ach_cog = self.bot.get_cog("Achievements")
+                                if ach_cog:
+                                    await ach_cog.check_achievements(guild, winner_id)
+                            except Exception as e:
+                                print(f"[Duel Achievements] Error: {e}")
 
-                        embed = discord.Embed(
-                            title="⚔️ Virtual Duel Ended!",
-                            description=(
-                                f"🏆 **Winner:** {w_member.mention} (**{w_handle}**) got **AC** first! 🎉\n"
-                                f"💀 **Defeated:** {l_member.mention} (**{l_handle}**)\n\n"
-                                f"**Problem:** [{prob_name}]({prob_url})\n\n"
-                                f"🔼 {w_member.mention} earned **+100 XP** and **+50 coins**! 🪙"
-                            ),
-                            color=0x2ECC71
-                        )
-                        await channel.send(embed=embed)
-                    elif status == "draw":
-                        embed = discord.Embed(
-                            title="⚔️ Virtual Duel Ended in a Draw!",
-                            description=(
-                                f"🤝 Both {c_member.mention} and {o_member.mention} solved it simultaneously!\n\n"
-                                f"**Problem:** [{prob_name}]({prob_url})"
-                            ),
-                            color=0x3498DB
-                        )
-                        await channel.send(embed=embed)
-                    elif status == "expired":
-                        embed = discord.Embed(
-                            title="⏱️ Virtual Duel Expired!",
-                            description=(
-                                f"⌛ Time limit of 2 hours has expired!\n"
-                                f"Neither {c_member.mention} nor {o_member.mention} solved the problem.\n\n"
-                                f"**Verdict:** **No AC** (Draw/Expired)"
-                            ),
-                            color=0x7F8C8D
-                        )
-                        await channel.send(embed=embed)
+                            embed = discord.Embed(
+                                title="⚔️ Virtual Duel Ended!",
+                                description=(
+                                    f"🏆 **Winner:** {w_member.mention} (**{w_handle}**) got **AC** first! 🎉\n"
+                                    f"💀 **Defeated:** {l_member.mention} (**{l_handle}**)\n\n"
+                                    f"**Problem:** [{prob_name}]({prob_url})\n\n"
+                                    f"🔼 {w_member.mention} earned **+100 XP** and **+50 coins**! 🪙"
+                                ),
+                                color=0x2ECC71
+                            )
+                            await channel.send(embed=embed)
+                        elif status == "draw":
+                            embed = discord.Embed(
+                                title="⚔️ Virtual Duel Ended in a Draw!",
+                                description=(
+                                    f"🤝 Both {c_member.mention} and {o_member.mention} solved it simultaneously!\n\n"
+                                    f"**Problem:** [{prob_name}]({prob_url})"
+                                ),
+                                color=0x3498DB
+                            )
+                            await channel.send(embed=embed)
+                        elif status == "expired":
+                            embed = discord.Embed(
+                                title="⏱️ Virtual Duel Expired!",
+                                description=(
+                                    f"⌛ Time limit of 2 hours has expired!\n"
+                                    f"Neither {c_member.mention} nor {o_member.mention} solved the problem.\n\n"
+                                    f"**Verdict:** **No AC** (Draw/Expired)"
+                                ),
+                                color=0x7F8C8D
+                            )
+                            await channel.send(embed=embed)
+        except Exception as e:
+            print(f"[Problems Duel Checker Task] Loop Error: {e}")
 
     @duel_checker.before_loop
     async def before_duel_checker(self) -> None:
@@ -365,64 +368,67 @@ class Problems(commands.Cog):
     @tasks.loop(hours=24)
     async def daily_recommendation(self) -> None:
         """Every day at 9 AM IST post recommended problem in progress-updates."""
-        # We need to run specifically at 9:00 AM IST.
-        # Check current time in IST
-        now = datetime.now(IST)
-        target = now.replace(hour=9, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
+        try:
+            # We need to run specifically at 9:00 AM IST.
+            # Check current time in IST
+            now = datetime.now(IST)
+            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
 
-        # Wait until next 9 AM IST
-        delay = (target - now).total_seconds()
-        print(f"[Problems Task] Waiting {delay} seconds until next 9 AM IST.")
-        await asyncio.sleep(delay)
+            # Wait until next 9 AM IST
+            delay = (target - now).total_seconds()
+            print(f"[Problems Task] Waiting {delay} seconds until next 9 AM IST.")
+            await asyncio.sleep(delay)
 
-        # Run recommendation
-        users = db.get_all_cf_users()
-        if not users:
-            return
+            # Run recommendation
+            users = db.get_all_cf_users()
+            if not users:
+                return
 
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
-            if not channel:
-                continue
-
-            for user_row in users:
-                user_id = user_row["user_id"]
-                cf_handle = user_row["cf_handle"]
-                member = guild.get_member(user_id)
-                if not member:
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.channels, name=PROGRESS_CHANNEL)
+                if not channel:
                     continue
 
-                try:
-                    rating = await self._get_user_rating(cf_handle)
-                    target_rating = rating + 100  # Challenge slightly above
-                    # Round to nearest 100
-                    target_rating = round(target_rating / 100) * 100
-                    if target_rating < 800:
-                        target_rating = 800
+                for user_row in users:
+                    user_id = user_row["user_id"]
+                    cf_handle = user_row["cf_handle"]
+                    member = guild.get_member(user_id)
+                    if not member:
+                        continue
 
-                    solved = await self._get_solved_problems(cf_handle)
-                    prob = await self._pick_problem([solved], target_rating)
+                    try:
+                        rating = await self._get_user_rating(cf_handle)
+                        target_rating = rating + 100  # Challenge slightly above
+                        # Round to nearest 100
+                        target_rating = round(target_rating / 100) * 100
+                        if target_rating < 800:
+                            target_rating = 800
 
-                    if prob:
-                        c_id = prob["contestId"]
-                        idx = prob["index"]
-                        p_name = prob["name"]
-                        url = f"https://codeforces.com/contest/{c_id}/problem/{idx}"
+                        solved = await self._get_solved_problems(cf_handle)
+                        prob = await self._pick_problem([solved], target_rating)
 
-                        embed = discord.Embed(
-                            title=f"☀️ Daily Problem Recommendation",
-                            description=(
-                                f"Good morning {member.mention}! Here is your daily CP challenge:\n\n"
-                                f"🎯 **[{p_name}]({url})** (Rating: `{target_rating}`)\n"
-                                f"🏷️ **Tags:** `{', '.join(prob.get('tags', []))}`"
-                            ),
-                            color=0xF1C40F
-                        )
-                        await channel.send(embed=embed)
-                except Exception as e:
-                    print(f"[Problems Task] Error suggesting for {cf_handle}: {e}")
+                        if prob:
+                            c_id = prob["contestId"]
+                            idx = prob["index"]
+                            p_name = prob["name"]
+                            url = f"https://codeforces.com/contest/{c_id}/problem/{idx}"
+
+                            embed = discord.Embed(
+                                title=f"☀️ Daily Problem Recommendation",
+                                description=(
+                                    f"Good morning {member.mention}! Here is your daily CP challenge:\n\n"
+                                    f"🎯 **[{p_name}]({url})** (Rating: `{target_rating}`)\n"
+                                    f"🏷️ **Tags:** `{', '.join(prob.get('tags', []))}`"
+                                ),
+                                color=0xF1C40F
+                            )
+                            await channel.send(embed=embed)
+                    except Exception as e:
+                        print(f"[Problems Task] Error suggesting for {cf_handle}: {e}")
+        except Exception as e:
+            print(f"[Problems Daily Recommendation Task] Loop Error: {e}")
 
     @daily_recommendation.before_loop
     async def before_daily(self) -> None:

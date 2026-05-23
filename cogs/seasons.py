@@ -26,63 +26,66 @@ class Seasons(commands.Cog):
     @tasks.loop(hours=6)
     async def season_checker(self) -> None:
         """Checks for month transitions and wraps up the season."""
-        now = datetime.now(IST)
-        current_month = now.month
-        current_year = now.year
+        try:
+            now = datetime.now(IST)
+            current_month = now.month
+            current_year = now.year
 
-        # Get last checked month/year from DB metadata or a settings check
-        # For simplicity, we can store it in a local key or look at the latest hall_of_fame record
-        with db._connect() as con:
-            latest_hof = con.execute(
-                "SELECT season_number FROM hall_of_fame ORDER BY ended_at DESC LIMIT 1"
-            ).fetchone()
-
-        last_resolved_season = 0
-        if latest_hof:
-            # Let's say season number was stored as month
-            last_resolved_season = latest_hof["season_number"]
-
-        # Calculate target season (previous month)
-        # If current month is different from the last resolved season (allowing for a fresh reset)
-        # Wait, if last_resolved_season == 0, it means no seasons have ended yet. Let's record the current month as active
-        if last_resolved_season == 0:
-            # Let's save a dummy entry or just wait till month ends
-            # We want to resolve the previous month if it has not been resolved yet.
-            # E.g. if today is June 1st and we haven't resolved May (5), we resolve May.
-            # Let's find previous month
-            prev_month = 12 if current_month == 1 else current_month - 1
-            prev_year = current_year - 1 if current_month == 1 else current_year
-            
-            # If we transition, let's check if there is any season data for prev_month that needs resolution
-            # If there is no HOF record for prev_month, resolve it!
-            # Let's check:
+            # Get last checked month/year from DB metadata or a settings check
+            # For simplicity, we can store it in a local key or look at the latest hall_of_fame record
             with db._connect() as con:
-                exists = con.execute(
-                    "SELECT * FROM hall_of_fame WHERE season_number = ?",
-                    (prev_month,)
+                latest_hof = con.execute(
+                    "SELECT season_number FROM hall_of_fame ORDER BY ended_at DESC LIMIT 1"
                 ).fetchone()
 
-            if not exists:
-                # We need to resolve prev_month season!
-                await self.resolve_season(prev_month, prev_year)
+            last_resolved_season = 0
+            if latest_hof:
+                # Let's say season number was stored as month
+                last_resolved_season = latest_hof["season_number"]
 
-        elif last_resolved_season != current_month:
-            # Check if previous month needs resolution
-            prev_month = 12 if current_month == 1 else current_month - 1
-            prev_year = current_year - 1 if current_month == 1 else current_year
-            
-            if last_resolved_season != prev_month:
-                # We haven't resolved the previous month yet!
-                await self.resolve_season(prev_month, prev_year)
+            # Calculate target season (previous month)
+            # If current month is different from the last resolved season (allowing for a fresh reset)
+            # Wait, if last_resolved_season == 0, it means no seasons have ended yet. Let's record the current month as active
+            if last_resolved_season == 0:
+                # Let's save a dummy entry or just wait till month ends
+                # We want to resolve the previous month if it has not been resolved yet.
+                # E.g. if today is June 1st and we haven't resolved May (5), we resolve May.
+                # Let's find previous month
+                prev_month = 12 if current_month == 1 else current_month - 1
+                prev_year = current_year - 1 if current_month == 1 else current_year
+                
+                # If we transition, let's check if there is any season data for prev_month that needs resolution
+                # If there is no HOF record for prev_month, resolve it!
+                # Let's check:
+                with db._connect() as con:
+                    exists = con.execute(
+                        "SELECT * FROM hall_of_fame WHERE season_number = ?",
+                        (prev_month,)
+                    ).fetchone()
 
-        # ── Last day of month countdown alert ────────────────
-        # On the last day of the month (e.g. after 6 PM), announce top 3 with countdown
-        last_day = calendar.monthrange(current_year, current_month)[1]
-        if now.day == last_day and now.hour >= 18:
-            # Only announce once per day (between 6 PM and 10 PM)
-            # Let's see: we can check if already announced today using a local variable or DB.
-            # Let's make it alert every 6 hours on the last day! That's fine and acts as a nice hype countdown.
-            await self.announce_countdown(current_month, last_day)
+                if not exists:
+                    # We need to resolve prev_month season!
+                    await self.resolve_season(prev_month, prev_year)
+
+            elif last_resolved_season != current_month:
+                # Check if previous month needs resolution
+                prev_month = 12 if current_month == 1 else current_month - 1
+                prev_year = current_year - 1 if current_month == 1 else current_year
+                
+                if last_resolved_season != prev_month:
+                    # We haven't resolved the previous month yet!
+                    await self.resolve_season(prev_month, prev_year)
+
+            # ── Last day of month countdown alert ────────────────
+            # On the last day of the month (e.g. after 6 PM), announce top 3 with countdown
+            last_day = calendar.monthrange(current_year, current_month)[1]
+            if now.day == last_day and now.hour >= 18:
+                # Only announce once per day (between 6 PM and 10 PM)
+                # Let's see: we can check if already announced today using a local variable or DB.
+                # Let's make it alert every 6 hours on the last day! That's fine and acts as a nice hype countdown.
+                await self.announce_countdown(current_month, last_day)
+        except Exception as e:
+            print(f"[Season Checker Task] Main Loop Error: {e}")
 
     @season_checker.before_loop
     async def before_checker(self) -> None:

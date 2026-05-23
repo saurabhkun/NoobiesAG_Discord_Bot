@@ -325,8 +325,8 @@ class Economy(commands.Cog):
 
                 success = True
                 message = f"🎨 **Custom role color applied successfully!** Your personal color is now set to `{arg}`! ✨"
-            except discord.Forbidden:
-                await ctx.reply("❌ Missing permissions to manage roles! Move the bot's role HIGHER in the server settings.")
+            except (discord.Forbidden, discord.HTTPException) as e:
+                await ctx.reply(f"❌ Failed to manage roles: {e}. Move the bot's role HIGHER in the server settings.")
                 return
 
         elif resolved_key in ["xp_boost", "boost"]:
